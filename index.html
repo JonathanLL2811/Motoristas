@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de Giras de Motoristas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body class="bg-gray-100 font-sans min-h-screen">
+
+    <div class="container mx-auto p-4 max-w-6xl">
+        <header class="text-center my-6">
+            <h1 class="text-3xl font-bold text-gray-800">Control de Giras - Motoristas</h1>
+            <p class="text-gray-600">Asignación diaria de rutas y reportes mensuales</p>
+        </header>
+
+        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+            <h2 class="text-xl font-semibold mb-4 text-gray-700 border-b pb-2">1. Seleccione el Motorista</h2>
+            <div id="contenedor-perfiles" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+                </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="bg-white p-6 rounded-lg shadow-md md:col-span-1 h-fit">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700 border-b pb-2">2. Detalles del Viaje</h2>
+                <form id="form-viaje" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-600">Motorista Seleccionado:</label>
+                        <input type="text" id="motorista-seleccionado" class="mt-1 block w-full rounded-md bg-gray-200 border border-gray-300 p-2 font-bold text-blue-700" readonly required placeholder="Haga clic en un perfil arriba">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-600">Fecha de Salida</label>
+                        <input type="date" id="input-fecha" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 bg-gray-50 border text-gray-700" required>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-600">Lugar de Destino (Manual)</label>
+                        <input type="text" id="input-lugar" placeholder="Ej. Lepaterique, Comayagua..." class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 bg-gray-50 border text-gray-700" required>
+                    </div>
+
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition duration-200">
+                        Mandar Motorista
+                    </button>
+                </form>
+            </div>
+
+            <div class="bg-white p-6 rounded-lg shadow-md md:col-span-2">
+                <div class="flex flex-col lg:flex-row justify-between items-center mb-4 border-b pb-2 gap-4">
+                    <h2 class="text-xl font-semibold text-gray-700">3. Generar Reportes</h2>
+                    
+                    <div class="flex flex-wrap items-center gap-2 justify-end w-full lg:w-auto">
+                        <select id="filtro-motorista" class="rounded-md border-gray-300 shadow-sm p-1.5 bg-gray-50 border text-sm text-gray-700">
+                            <option value="TODOS">Todos los motoristas</option>
+                        </select>
+                        
+                        <input type="month" id="filtro-mes" class="rounded-md border-gray-300 shadow-sm p-1.5 bg-gray-50 border text-sm text-gray-700">
+                        
+                        <button id="btn-reporte" class="bg-green-600 hover:bg-green-700 text-white font-medium text-sm py-1.5 px-4 rounded-md transition duration-200 shadow">
+                            Ver Reporte
+                        </button>
+
+                        <button id="btn-excel" class="bg-emerald-700 hover:bg-emerald-800 text-white font-medium text-sm py-1.5 px-4 rounded-md transition duration-200 shadow hidden">
+                            💾 Exportar a Excel
+                        </button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table id="tabla-datos-reporte" class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Motorista</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lugar de Destino</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-reporte" class="bg-white divide-y divide-gray-200 text-sm text-gray-700">
+                            <tr>
+                                <td colspan="3" class="text-center py-6 text-gray-400 italic">Presione el botón "Ver Reporte" para cargar los datos del mes.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div id="contador-viajes" class="mt-4 text-right font-semibold text-gray-700 hidden">
+                    Total de salidas en este reporte: <span id="total-num" class="text-blue-600 font-bold">0</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Tus credenciales reales integradas
+        const firebaseConfig = {
+            apiKey: "AIzaSyBCjXJvAw56JYyLMhvSRtF8wl-i8yY0z6k",
+            authDomain: "motoristas-74b48.firebaseapp.com",
+            projectId: "motoristas-74b48",
+            storageBucket: "motoristas-74b48.firebasestorage.app",
+            messagingSenderId: "690437782150",
+            appId: "1:690437782150:web:f85717abb744f47dc9af07",
+            measurementId: "G-7GKYR48V6Z"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Nombres de tus motoristas
+        const listaMotoristas = [
+            "Allan", "Carlos", "Juan", 
+            "Luis", "Pedro", "Jorge", 
+            "Mario", "Héctor", "David"
+        ];
+
+        // Elementos del DOM
+        const contenedorPerfiles = document.getElementById('contenedor-perfiles');
+        const motoristaSeleccionadoInput = document.getElementById('motorista-seleccionado');
+        const formViaje = document.getElementById('form-viaje');
+        const filtroMotorista = document.getElementById('filtro-motorista');
+        const filtroMes = document.getElementById('filtro-mes');
+        const btnReporte = document.getElementById('btn-reporte');
+        const btnExcel = document.getElementById('btn-excel');
+        const tablaReporte = document.getElementById('tabla-reporte');
+        const contadorViajes = document.getElementById('contador-viajes');
+        const totalNum = document.getElementById('total-num');
+
+        // Configurar fechas automáticas al cargar
+        const hoy = new Date();
+        document.getElementById('input-fecha').value = hoy.toISOString().split('T')[0];
+        filtroMes.value = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`;
+
+        // Construir la sección de perfiles y selectores en pantalla
+        function inicializarInterfaz() {
+            contenedorPerfiles.innerHTML = '';
+            listaMotoristas.forEach(nombre => {
+                const card = document.createElement('div');
+                card.className = "perfil-card bg-gray-50 border-2 border-gray-200 rounded-lg p-3 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition font-medium text-gray-700";
+                card.innerHTML = `
+                    <div class="w-10 h-10 bg-blue-600 rounded-full mx-auto mb-1 flex items-center justify-center text-white font-bold text-sm shadow-sm">
+                        ${nombre.substring(0,2)}
+                    </div>
+                    <span class="text-sm block truncate">${nombre}</span>
+                `;
+                
+                card.addEventListener('click', () => {
+                    document.querySelectorAll('.perfil-card').forEach(c => c.classList.remove('border-blue-500', 'bg-blue-50', 'ring-2', 'ring-blue-300'));
+                    card.classList.add('border-blue-500', 'bg-blue-50', 'ring-2', 'ring-blue-300');
+                    motoristaSeleccionadoInput.value = nombre;
+                });
+                contenedorPerfiles.appendChild(card);
+
+                const opcion = document.createElement('option');
+                opcion.value = nombre;
+                opcion.textContent = nombre;
+                filtroMotorista.appendChild(opcion);
+            });
+        }
+
+        // GUARDAR VIAJE EN FIRESTORE
+        formViaje.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const motorista = motoristaSeleccionadoInput.value;
+            const fecha = document.getElementById('input-fecha').value;
+            const lugar = document.getElementById('input-lugar').value.trim();
+
+            if (!motorista) {
+                alert('Por favor, selecciona un motorista haciendo clic en su perfil primero.');
+                return;
+            }
+
+            try {
+                await addDoc(collection(db, "salidas"), {
+                    motorista: motorista,
+                    fecha: fecha,
+                    lugar: lugar
+                });
+
+                alert(`¡Salida registrada con éxito! ${motorista} mandado a ${lugar}.`);
+                document.getElementById('input-lugar').value = '';
+                document.getElementById('input-fecha').value = hoy.toISOString().split('T')[0];
+                
+            } catch (error) {
+                console.error("Error guardando el registro: ", error);
+                alert('Ocurrió un error al intentar conectarse con la base de datos.');
+            }
+        });
+
+        // OBTENER REPORTE Y MOSTRAR BOTÓN DE EXCEL
+        btnReporte.addEventListener('click', async () => {
+            const mesSel = filtroMes.value; 
+            const motoristaSel = filtroMotorista.value; 
+
+            if (!mesSel) {
+                alert('Por favor selecciona un mes válido.');
+                return;
+            }
+
+            tablaReporte.innerHTML = `<tr><td colspan="3" class="text-center py-4 text-gray-500">Extrayendo datos de la nube...</td></tr>`;
+            btnExcel.classList.add('hidden'); // Ocultar mientras carga
+            
+            try {
+                const q = query(collection(db, "salidas"), orderBy("fecha", "desc"));
+                const querySnapshot = await getDocs(q);
+
+                let totalContador = 0;
+                tablaReporte.innerHTML = '';
+
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const perteneceAlMes = data.fecha && data.fecha.startsWith(mesSel);
+                    const perteneceAlMotorista = (motoristaSel === "TODOS") || (data.motorista === motoristaSel);
+
+                    if (perteneceAlMes && perteneceAlMotorista) {
+                        totalContador++;
+
+                        const fila = document.createElement('tr');
+                        fila.className = "hover:bg-gray-50 transition duration-150";
+                        fila.innerHTML = `
+                            <td class="px-4 py-3 whitespace-nowrap text-gray-600">${data.fecha}</td>
+                            <td class="px-4 py-3 whitespace-nowrap font-semibold text-gray-900">${data.motorista}</td>
+                            <td class="px-4 py-3 text-gray-700 font-medium">${data.lugar}</td>
+                        `;
+                        tablaReporte.appendChild(fila);
+                    }
+                });
+
+                if (totalContador === 0) {
+                    tablaReporte.innerHTML = `<tr><td colspan="3" class="text-center py-6 text-gray-500 italic">No existen salidas registradas para los filtros seleccionados.</td></tr>`;
+                    contadorViajes.classList.add('hidden');
+                } else {
+                    contadorViajes.classList.remove('hidden');
+                    totalNum.textContent = totalContador;
+                    btnExcel.classList.remove('hidden'); // Mostrar botón si hay datos
+                }
+
+            } catch (error) {
+                console.error("Error al procesar el reporte: ", error);
+                tablaReporte.innerHTML = `<tr><td colspan="3" class="text-center py-4 text-red-500">Error en la comunicación con Firestore.</td></tr>`;
+            }
+        });
+
+        // NUEVO: FUNCIÓN PARA EXPORTAR LA TABLA ACTUAL A EXCEL
+        btnExcel.addEventListener('click', () => {
+            const mesSel = filtroMes.value;
+            const motoristaSel = filtroMotorista.value;
+            
+            // Obtener el elemento de la tabla HTML
+            const tabla = document.getElementById('tabla-datos-reporte');
+            
+            // Convertir la tabla HTML a un formato de hoja de cálculo de SheetJS
+            const wb = XLSX.utils.table_to_book(tabla, { sheet: "Reporte de Salidas" });
+            
+            // Generar el nombre del archivo dinámico según los filtros (Ej: Reporte_Allan_2026-06.xlsx)
+            const nombreArchivo = `Reporte_${motoristaSel.replace(/ /g, "_")}_${mesSel}.xlsx`;
+            
+            // Descargar el archivo Excel inmediatamente en la computadora
+            XLSX.writeFile(wb, nombreArchivo);
+        });
+
+        inicializarInterfaz();
+    </script>
+</body>
+</html>
